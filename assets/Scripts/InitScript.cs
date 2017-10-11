@@ -2,8 +2,8 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-//ellipsoid
-//6378137.0 6378137.0 6356752.314245
+using Assets.Scripts;
+
 
 public enum CreatureType { Gnome, Bat, Otter, Bee };
 
@@ -45,6 +45,11 @@ public class InitScript : MonoBehaviour {
     // Use this for initialization
     void Start () {
         Debug.Log("InitScript::Start");
+        Ellipsoid e = new Ellipsoid();
+        foreach (GnomeObject creature in Creatures)
+        {
+
+        }
 		
 	}
 	
