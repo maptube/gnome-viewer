@@ -48,7 +48,8 @@ public class InitScript : MonoBehaviour {
         Ellipsoid e = new Ellipsoid();
         foreach (GnomeObject creature in Creatures)
         {
-
+            DVec3 v = e.ToVector(creature.lon*3.14/180.0, creature.lat*3.14/180.0, 0);
+            Debug.Log(creature.lon + " "+ creature.lat + " " + v.x + " " + v.y + " " + v.z);
         }
 		
 	}
