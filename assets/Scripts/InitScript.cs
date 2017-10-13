@@ -46,12 +46,15 @@ public class InitScript : MonoBehaviour {
     void Start () {
         Debug.Log("InitScript::Start");
         Ellipsoid e = new Ellipsoid();
+//        double sx = 0, sy = 0, sz = 0;
         foreach (GnomeObject creature in Creatures)
         {
             DVec3 v = e.ToVector(creature.lon*3.14/180.0, creature.lat*3.14/180.0, 0);
             Debug.Log(creature.lon + " "+ creature.lat + " " + v.x + " " + v.y + " " + v.z);
+//           sx += v.x; sy += v.y; sz += v.z;
         }
-		
+//       int n = Creatures.Length;
+//       Debug.Log("Centre: " + (sx / n) + " " + (sy / n) + " " + (sz / n));
 	}
 	
 	// Update is called once per frame

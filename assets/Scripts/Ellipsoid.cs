@@ -9,7 +9,12 @@ namespace Assets.Scripts
 {
     class Ellipsoid
     {
+        // Centre of all gnomes: 3977062.03664508 -1063.94590048765 4969623.85719482
+
         #region Properties
+        
+        //Fake centre point used in spheroid for Unity with relative to centre rendering - it can only use floats!
+        public double CX = 3977062.03664508, CY = -1063.94590048765, CZ = 4969623.85719482;
 
         public double a, b, c;
         public double a2, b2, c2;
@@ -57,6 +62,16 @@ namespace Assets.Scripts
         }
 
         /// <summary>
+        /// Convert degrees to radians
+        /// </summary>
+        /// <param name="a">Angle in degrees</param>
+        /// <returns>Angle in radians</returns>
+        public static double ToRad(double a)
+        {
+            return a * Math.PI / 180.0;
+        }
+
+        /// <summary>
         /// Convert a latitude and longitude into Cartesian coordinates
         /// </summary>
         /// <param name="lon">Geodetic longitude in radians</param>
@@ -85,6 +100,9 @@ namespace Assets.Scripts
 
             //NOTE: you do rSurface = rSurface + (geodetic.height * n) to add the height on if you need it
             rSurface = rSurface + new DVec3(geodeticHeight * n.x, geodeticHeight * n.y, geodeticHeight * n.z);
+
+            //Relative to Centre rendering:
+            rSurface.x -= CX; rSurface.y -= CY; rSurface.z -= CZ;
 
             return rSurface;
         }
