@@ -5,12 +5,21 @@ using System.Linq;
 using System.Text;
 
 using UnityEngine;
+using UnityEditor;
 
 namespace assets.Scripts
 {
     /// <summary>
     /// Read a Lidar file in ASC format and create a point cloud object from it.
     /// ASC is ASCII.
+    /// NOTE: park data is as follows (1 metre DSM, north part of stadium 3784, but 50cm is labelled identically):
+    ///  |---------------------------|
+    ///  | TQ38ne 3785 | TQ38ne 3885 |
+    ///  |---------------------------|
+    ///  | TQ38se 3784 | TQ38se 3884 |
+    ///  |---------------------------|
+    ///  | TQ38se 3783 | TQ38se 3883 |
+    ///  |---------------------------|
     /// </summary>
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
     public class LidarASCReader : MonoBehaviour
@@ -57,10 +66,11 @@ namespace assets.Scripts
 
         public void Awake()
         {
+            //TODO: test for the existence of the asset before creating a new one
             //CreateMesh2();
             ReadASCLidar();
-            CreateMesh();
-
+            //CreateMesh();
+            CreateTerrain();
         }
 
         // Update is called once per frame
@@ -155,6 +165,7 @@ namespace assets.Scripts
 
         protected void CreateMesh2()
         {
+            //THIS IS A TEST PYRAMID MESH
             MeshFilter mf = GetComponent<MeshFilter>();
             Mesh mesh = new Mesh();
             mf.mesh = mesh;
@@ -189,7 +200,7 @@ namespace assets.Scripts
 
             //HACK! there's a limit of 65000 indices per mesh, so we need to split big coverages into smaller mesh parts
             //HACK! I'm going to hack the number of rows for testing
-            nrows = 10;
+            nrows = 20;
 
             //First, build the grid of vertices
             Vector3 [] vertices = new Vector3[ncols * nrows];
@@ -277,6 +288,38 @@ namespace assets.Scripts
 
             //mesh.RecalculateBounds();
             mesh.RecalculateNormals();
+        }
+
+        /// <summary>
+        /// Create a Unity terrain from the Lidar data.
+        /// Creates a file in Assets/Filename.assets (where Filename is the name of the dem loaded without the path or extension).
+        /// </summary>
+        protected void CreateTerrain()
+        {
+            //need to create a new array of height values here in order to get rid of the NODATA_values
+            float maxvalue = -float.MaxValue;
+            float[,] data = new float[ncols, nrows];
+            for (int y=0; y<nrows; y++)
+            {
+                for (int x=0; x<ncols; x++)
+                {
+                    float val = CoverageData[x, y];
+                    if (float.IsNaN(val)) val = 0; //I've set missing data values to zero in order that I can display something
+                    data[x, y] = val/108.94f; //normalise height HARDCODED maxvalue!!!
+                    if (val > maxvalue) maxvalue = val;
+                }
+            }
+            Debug.Log("LidarASCReader.CreateTerrain: maxvalue=" + maxvalue);
+            TerrainData terrainData = new TerrainData();
+            terrainData.heightmapResolution = 1000; // size;
+            terrainData.size = new Vector3(ncols*cellsize, 108.0f, nrows*cellsize);
+
+            //terrainData.heightmapResolution = 512;
+            terrainData.baseMapResolution = 1024;
+            //terrainData.SetDetailResolution(1024, terrainData.detailResolutionPerPatch);
+            terrainData.SetHeights(0, 0, data);
+            string Name = Path.GetFileNameWithoutExtension(Filename);
+            AssetDatabase.CreateAsset(terrainData, "Assets/"+Name+".asset");
         }
 
     }
