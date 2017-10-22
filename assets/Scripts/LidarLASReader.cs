@@ -440,11 +440,17 @@ public class LidarLASReader : MonoBehaviour {
         return ull;
     }
 
+    /// <summary>
+    /// Read long value, which is 4 bytes.
+    /// </summary>
+    /// <param name="pos"></param>
+    /// <param name="data"></param>
+    /// <returns></returns>
     public static Int32 ReadLong(ref long pos, ref byte [] data)
     {
         //4 bytes
         Int32 l = BitConverter.ToInt32(data, (int)pos);
-        pos += 8;
+        pos += 4;
         return l;
     }
 
