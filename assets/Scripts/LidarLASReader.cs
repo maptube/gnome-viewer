@@ -15,6 +15,7 @@ public class LidarLASReader : MonoBehaviour {
     public string Filename;
 
     private LASPublicHeaderBlock Header;
+    private float[,] CoverageData;
 
     //struct of binary format
     public struct LASPublicHeaderBlock {
@@ -532,19 +533,31 @@ public class LidarLASReader : MonoBehaviour {
         header.MaxZ = ReadDouble(ref pos, ref data);
         header.MinZ = ReadDouble(ref pos, ref data);
         //TODO: these are only in the 1.4 spec files
-        header.StartofWaveformDataPacketRecord = ReadUnsignedLongLong(ref pos, ref data);
-        header.StartofFirstExtendedVariableLengthRecord = ReadUnsignedLong(ref pos, ref data); //See note above on long long values 
-        header.NumberofExtendedVariableLengthRecords = ReadUnsignedLong(ref pos, ref data);
-        header.NumberofPointRecords = ReadUnsignedLongLong(ref pos, ref data);
-        header.NumberofPointsByReturn = new UInt64[15];
-        for (int i = 0; i < 15; i++) header.NumberofPointsByReturn[i] = ReadUnsignedLongLong(ref pos, ref data);
-
+        float version = header.VersionMajor + header.VersionMajor / 10; //so 1,4 become 1.4
+        if (version >= 1.4)
+        {
+            header.StartofWaveformDataPacketRecord = ReadUnsignedLongLong(ref pos, ref data);
+            header.StartofFirstExtendedVariableLengthRecord = ReadUnsignedLong(ref pos, ref data); //See note above on long long values 
+            header.NumberofExtendedVariableLengthRecords = ReadUnsignedLong(ref pos, ref data);
+            header.NumberofPointRecords = ReadUnsignedLongLong(ref pos, ref data);
+            header.NumberofPointsByReturn = new UInt64[15];
+            for (int i = 0; i < 15; i++) header.NumberofPointsByReturn[i] = ReadUnsignedLongLong(ref pos, ref data);
+        }
+        else
+        {
+            //spec says if they're not used they should be zero
+            header.StartofWaveformDataPacketRecord = 0;
+            header.StartofFirstExtendedVariableLengthRecord = 0;
+            header.NumberofExtendedVariableLengthRecords = 0;
+            header.NumberofPointRecords = 0;
+            for (int i=0; i<15; i++) header.NumberofPointsByReturn[i]= 0;
+        }
         return header;
     }
 
     protected void ReadLASPoints(LASPublicHeaderBlock header,ref byte [] data)
     {
-        ulong NumPoints = header.LegacyNumberofPointRecords; // header.NumberofPointRecords; //TODO: need to use the correct one based on version
+        ulong NumPoints = Math.Max(header.LegacyNumberofPointRecords, header.NumberofPointRecords); //you have to use the correct one based on version
         long pos = header.OffsetToPointData;
         uint PDRFormat = header.PointDataRecordFormat; //0..10 designates which format of point data is being used - all points are the same format (preferred formats in LAS 1.4 are 6-10)
         for (ulong i=0; i<NumPoints; i++)
@@ -568,6 +581,7 @@ public class LidarLASReader : MonoBehaviour {
             double X = P.X * header.XScaleFactor + header.XOffset;
             double Y = P.Y * header.YScaleFactor + header.YOffset;
             double Z = P.Z * header.ZScaleFactor + header.ZOffset;
+            //and do something with the data - TODO: classification might be interesting?
         }
     }
 
