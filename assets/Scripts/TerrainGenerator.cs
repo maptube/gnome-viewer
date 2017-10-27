@@ -124,23 +124,122 @@ namespace assets.Scripts
         }
 
         /// <summary>
+        /// Split a coverage grid of heights into a list of smaller coverages. The primary reason for doing this is to split up a model for 3D printing so it can be made physically bigger.
+        /// For example, if you pass in XCount=4 and YCount=4, then the CoverageData gets split up into 16 squares of equal size which are returned as a list of float arrays (top row (y=0) first left to right).
+        /// </summary>
+        /// <param name="CoverageData"></param>
+        /// <param name="XCount">Number of grid squares to make in the X direction</param>
+        /// <param name="YCount">Number of grid squares to make in the Y direction</param>
+        /// <returns></returns>
+        public static List<float[,]> SplitTerrain(float [,] CoverageData, int XCount, int YCount)
+        {
+            int ncols = CoverageData.GetLength(0);
+            int nrows = CoverageData.GetLength(1);
+            List<float[,]> Result = new List<float[,]>();
+            int sizeX = ncols / XCount;
+            int sizeY = nrows / YCount;
+            for (int y=0; y<YCount; y++)
+            {
+                for (int x=0; x<XCount; x++)
+                {
+                    int MinX = x * sizeX;
+                    int MaxX = (x + 1) * sizeX;
+                    if (MaxX > ncols) MaxX = ncols;
+                    int MinY = y * sizeY;
+                    int MaxY = (y + 1) * sizeY;
+                    if (MaxY > nrows) MaxY = nrows;
+                    int dimX = MaxX - MinX, dimY = MaxY - MinY;
+                    float[,] data = new float[dimX, dimY];
+                    for (int dy=0; dy<dimY; dy++)
+                    {
+                        for (int dx=0; dx<dimX; dx++)
+                        {
+                            data[dx, dy] = CoverageData[MinX + dx,MinY+dy];
+                        }
+                    }
+                    Result.Add(data);
+                }
+            }
+
+            return Result;
+        }
+
+        #region OBJExporter
+
+        /// <summary>
+        /// Assumes that an array of points have been created for the OBJ conversion via a for y for x pair of nested loops.
+        /// In this situation, the vertex number for a specific point on the grid can ve worked out easily using the formula below.
+        /// </summary>
+        /// <param name="xcol">The number of columns across for the desired point (NOT its x coordinate)</param>
+        /// <param name="yrow">The number of rows down for the desired point (NOT its y coordinate)</param>
+        /// <returns>The vertex number of the required position of the point on the xcol, yrow position in the grid. NOTE the +1 as OBJ vertices are 1 based.</returns>
+        private int OBJPointIndex(int xcol, int yrow)
+        {
+            int v = xcol + yrow * ncols + 1;
+            return v;
+        }
+
+        /// <summary>
         /// Export an OBJ file suitable for loading into an art package, for example to then export as STL for 3D printing.
         /// </summary>
         /// <param name="Filename"></param>
         public void ExportOBJFile(string Filename)
         {
+            const float ZDepth = -10.0f; //how deep to make the plinth that the landscape sits on
+
             using (StreamWriter writer = new StreamWriter(Filename))
             {
                 writer.WriteLine("#Wavefront obj file created by MapTube Lidar TerrainGenerator");
 
+                int p = 0; //point counter
                 //points - v 0.5 1.2 3.4
                 for (int y=0; y<nrows; y++)
                 {
                     for (int x=0; x<ncols; x++)
                     {
                         writer.WriteLine(string.Format("v {0} {1} {2}",((float)x)*cellsize,((float)y)*cellsize,CoverageData[x,y]));
+                        p++;
                     }
                 }
+                //points forming base and sides
+                //need points all around the base edges of the solid block to match the grid above - set height at -1 so as not to interfere with the landscape mesh
+                //y=0 z=-1 row
+                writer.WriteLine("#Base y=0 z=-1 line");
+                int basey0 = p;
+                for (int x=0; x<ncols; x++)
+                {
+                    writer.WriteLine(string.Format("v {0} {1} {2}", ((float)x) * cellsize, 0, ZDepth));
+                    p++;
+                }
+                //y=nrows z=-1 row
+                writer.WriteLine("#Base y=nrows z=-1 line");
+                int baseymax = p;
+                float yordinate = ((float)(nrows-1)) * cellsize;
+                for (int x = 0; x < ncols; x++)
+                {
+                    writer.WriteLine(string.Format("v {0} {1} {2}", ((float)x) * cellsize, yordinate, ZDepth));
+                    p++;
+                }
+                //x=0 z=-1 column - NOTE: the first and last points duplicate the corners
+                writer.WriteLine("#Base x=0 z=-1 line");
+                int basex0 = p;
+                for (int y = 0; y < nrows; y++)
+                {
+                    writer.WriteLine(string.Format("v {0} {1} {2}", 0, ((float)y) * cellsize, ZDepth));
+                    p++;
+                }
+                //x=ncols-1 z=-1 column - NOTE: the first and last points duplicate the corners
+                writer.WriteLine("#Base x=ncols-1 z=-1 line");
+                int basexmax = p;
+                float xordinate = ((float)(ncols - 1)) * cellsize;
+                for (int y = 0; y < nrows; y++)
+                {
+                    writer.WriteLine(string.Format("v {0} {1} {2}", xordinate, ((float)y) * cellsize, ZDepth));
+                    p++;
+                }
+
+
+                //////
 
                 //faces - f 1 2 3 (NOTE 1 based index for vertices)
                 for (int y=0; y<nrows-1; y++)
@@ -148,20 +247,97 @@ namespace assets.Scripts
                     for (int x=0; x<ncols-1; x++)
                     {
                         //it's a square tile divided into two triangles
-                        int v1 = x       +       y * ncols + 1;
-                        int v2 = (x + 1) +       y * ncols + 1;
-                        int v3 = (x + 1) + (y + 1) * ncols + 1;
-                        int v4 = x       + (y + 1) * ncols + 1;
+                        //int v1 = x       +       y * ncols + 1;
+                        //int v2 = (x + 1) +       y * ncols + 1;
+                        //int v3 = (x + 1) + (y + 1) * ncols + 1;
+                        //int v4 = x       + (y + 1) * ncols + 1;
+                        int v1 = OBJPointIndex(x, y);
+                        int v2 = OBJPointIndex(x + 1, y);
+                        int v3 = OBJPointIndex(x + 1, y + 1);
+                        int v4 = OBJPointIndex(x, y + 1);
                         writer.WriteLine(string.Format("f {0} {1} {2}", v1, v2, v3));
                         writer.WriteLine(string.Format("f {0} {1} {2}", v1, v3, v4));
                     }
                 }
 
-                //TODO: up to this point we just have the top face. In order to 3D print you need a solid, so I could make it into a box here...
-                //You need some additional points though.
+                //side faces
+                //up to this point we just have the top face. In order to 3D print you need a solid, so I could make it into a box here...
+                //y=0 face
+                writer.WriteLine("#y=0 end face");
+                for (int x=0; x<ncols-1; x++)
+                {
+                    int v1 = basey0 + x + 1;
+                    int v2 = OBJPointIndex(x, 0);
+                    int v3 = OBJPointIndex(x + 1, 0);
+                    int v4 = basey0 + (x + 1) + 1;
+                    writer.WriteLine(string.Format("f {0} {1} {2}", v1, v2, v3));
+                    writer.WriteLine(string.Format("f {0} {1} {2}", v1, v3, v4));
+                }
+                //y=nrows-1 face
+                writer.WriteLine("#y=nrows-1 end face");
+                for (int x = 0; x < ncols - 1; x++)
+                {
+                    int v1 = baseymax + x + 1;
+                    int v2 = OBJPointIndex(x, nrows-1);
+                    int v3 = OBJPointIndex(x + 1, nrows-1);
+                    int v4 = baseymax + (x + 1) + 1;
+                    writer.WriteLine(string.Format("f {0} {1} {2}", v3, v2, v1)); //NOTE backwards from above as on the other side
+                    writer.WriteLine(string.Format("f {0} {1} {2}", v4, v3, v1));
+                }
+                //x=0 face
+                writer.WriteLine("#x=0 end face");
+                for (int y = 0; y < nrows - 1; y++)
+                {
+                    int v1 = basex0 + y + 1;
+                    int v2 = OBJPointIndex(0, y);
+                    int v3 = OBJPointIndex(0, y+1);
+                    int v4 = basex0 + (y + 1) + 1;
+                    writer.WriteLine(string.Format("f {0} {1} {2}", v1, v2, v3));
+                    writer.WriteLine(string.Format("f {0} {1} {2}", v1, v3, v4));
+                }
+                //x=ncols-1 face
+                writer.WriteLine("#x=ncols-1 end face");
+                for (int y = 0; y < nrows - 1; y++)
+                {
+                    int v1 = basexmax + y + 1;
+                    int v2 = OBJPointIndex(ncols-1, y);
+                    int v3 = OBJPointIndex(ncols-1, y + 1);
+                    int v4 = basexmax + (y + 1) + 1;
+                    writer.WriteLine(string.Format("f {0} {1} {2}", v3, v2, v1)); //NOTE backwards from above as on the other side
+                    writer.WriteLine(string.Format("f {0} {1} {2}", v4, v3, v1));
+                }
+                //finally, wire up the bottom face, that's fan left and right single tile edge and tri strip the middle bits
+                writer.WriteLine("#bottom face");
+                //base y=0 row to x=0 column fan AND in parallel, the other side fan y=0 row 0 to x=nrows-1 column fan
+                int lv1 = basey0+1; //left
+                int rv1 = basey0 + nrows - 2; //right
+                for (int y=0; y<nrows-1; y++)
+                {
+                    int lv2 = basex0 + y + 1;
+                    int lv3 = basex0 + (y + 1) + 1;
+                    writer.WriteLine(string.Format("f {0} {1} {2}", lv1, lv2, lv1));
+                    int rv2 = basexmax + y + 1;
+                    int rv3 = basexmax + (y + 1) + 1;
+                    writer.WriteLine(string.Format("f {0} {1} {2}", rv1, rv2, rv3)); //NOTE backwards from previous to maintain winding
+                }
+                //now tristrip the middle
+                for (int x=0; x<nrows-1; x++)
+                {
+                    int v1 = basey0 + x + 1;
+                    int v2 = baseymax + x + 1;
+                    int v3 = baseymax + (x + 1) + 1;
+                    int v4 = basey0 + (x + 1) + 1;
+                    //skip the first and last triangles which were tri-fanned in the previous block
+                    if (x!=0)
+                        writer.WriteLine(string.Format("f {0} {1} {2}", v1, v2, v4));
+                    if (x!=(nrows-1))
+                        writer.WriteLine(string.Format("f {0} {1} {2}", v4, v2, v3));
+                }
             }
 
         }
+
+        #endregion OBJExporter
 
 
     }

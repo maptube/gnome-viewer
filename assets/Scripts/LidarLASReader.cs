@@ -328,7 +328,15 @@ namespace assets.Scripts
             terragen.CreateTerrain(Filename);
 
             //and export for 3d printing
-            terragen.ExportOBJFile(Path.GetFileNameWithoutExtension(Filename) + ".obj");
+            List<float[,]> tiles = TerrainGenerator.SplitTerrain(CoverageData, 4, 4); //split the original coverage into 4x4 tiles so we can print it bigger
+            for (int y = 0; y < 4; y++)
+            {
+                for (int x = 0; x < 4; x++)
+                {
+                    TerrainGenerator T = new TerrainGenerator(tiles[x+y*4], cellsize);
+                    T.ExportOBJFile(Path.GetFileNameWithoutExtension(Filename) + "_" + x + "_"+y + ".obj");
+                }
+            }
         }
 
         // Update is called once per frame
