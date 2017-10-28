@@ -326,6 +326,7 @@ namespace assets.Scripts
 
             TerrainGenerator terragen = new TerrainGenerator(CoverageData, cellsize);
             terragen.CreateTerrain(Filename);
+            terragen.ExportOBJFile(Path.GetFileNameWithoutExtension(Filename) + ".obj");
 
             //and export for 3d printing
             List<float[,]> tiles = TerrainGenerator.SplitTerrain(CoverageData, 4, 4); //split the original coverage into 4x4 tiles so we can print it bigger
@@ -592,9 +593,9 @@ namespace assets.Scripts
             //set up my coverage grid to put the data into - I'm making this square
             double width = header.MaxX - header.MinX;
             double height = header.MaxY - header.MinY;
-            double maxDim = Math.Max(width, height); 
-            double scale = 1.0f; //1.0 metre resolution grid
-            int isize = (int)Math.Ceiling(maxDim / scale);
+            double maxDim = Math.Max(width, height);
+            double gridspacing = 1.0f; //1.0 metre resolution grid
+            int isize = (int)Math.Ceiling(maxDim / gridspacing);
             this.cellsize = (float)(maxDim/(float)isize); //this is the spacing on the XY axes to match the value in the height field (Z)
             CoverageData = new float[isize, isize];
             Classification = new byte[isize, isize];
@@ -626,8 +627,8 @@ namespace assets.Scripts
                 double Y = P.Y * header.YScaleFactor + header.YOffset;
                 double Z = P.Z * header.ZScaleFactor + header.ZOffset;
                 //and do something with the data - TODO: classification might be interesting?
-                int gx = (int)((X - header.MinX) / scale);
-                int gy = (int)((Y - header.MinY) / scale);
+                int gx = (int)((X - header.MinX) / gridspacing);
+                int gy = (int)((Y - header.MinY) / gridspacing);
                 float val = (float)Z;
                 if ((gx>=isize)||(gy>=isize)||(gx<0)||(gy<0))
                 {

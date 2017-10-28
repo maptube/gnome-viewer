@@ -33,6 +33,7 @@ namespace assets.Scripts
         /// <summary>
         /// Create a Unity terrain from the Lidar data.
         /// Creates a file in Assets/Filename.assets (where Filename is the name of the dem loaded without the path or extension).
+        /// TODO: potSize could be a user parameter, but you're a bit limited in values: 513, 1025, 2049? It gets too big after that.
         /// </summary>
         /// <param name="Filename">This determines the name given to the created asset - it strips off the filename with no extension</param>
         public void CreateTerrain(string Filename)
@@ -46,7 +47,7 @@ namespace assets.Scripts
             //then we need to create a new array of height values here in order to get rid of the NODATA_values
             //first pass through data to determine maximum height
             float maxheight = -float.MaxValue;
-            for (int y = 0; y < nrows; y++) for (int x = 0; x < ncols; x++) if (data[x, y] > maxheight) maxheight = data[x, y];
+            for (int y = 0; y < potSize; y++) for (int x = 0; x < potSize; x++) if (data[x, y] > maxheight) maxheight = data[x, y];
             Debug.Log("TerrainGenerator.CreateTerrain: maxheight=" + maxheight);
 
             //second pass to normalise the height
@@ -85,6 +86,7 @@ namespace assets.Scripts
         /// Simple bilinear interpolation.
         /// TODO: this is designed to expand the data i.e. CoverageData[1000,1000] maps onto data[1025,1025] NOT the other way around (yet?)
         /// ALSO, it's square!
+        /// ALSO, the bilinear isn't the best as it assumes the square of four points is planar, rather than using two triangular faces.
         /// </summary>
         /// <param name="size">Power of 2 plus one size i.e. 1025 (+1 comes from the edges)</param>
         /// <param name="data">Output data resampled from CoverageData</param>
@@ -180,6 +182,58 @@ namespace assets.Scripts
         }
 
         /// <summary>
+        /// Assumes that points for the base have been created for the OBJ conversion as follows:
+        /// 4 corner points (0,0), (0,ymax), (xmax,ymax), (xmax,0)
+        /// y=0 z=-1 row
+        /// y=nrows z=-1 row
+        /// x=0 z=-1 column
+        /// x=ncols-1 z=-1 column
+        /// Given the X and Y position (same as for OBJPointIndex), return the index of the point.
+        /// NOTE: only the points along the four base edges and corners are defined. Anything else will raise an error.
+        /// IMPORTANT: pont numbers start from 1, so all have this offset added, so first corner index=1 and everything follows that
+        /// </summary>
+        /// <param name="xcol"></param>
+        /// <param name="yrow"></param>
+        /// <returns></returns>
+        private int OBJBasePointIndex(int xcol, int yrow)
+        {
+            //defines base of 4 edges based on number of columns and rows - this is used as an offset by the caller to get the vertex number
+            int basey0 = 5; //5 is the index of the first point after the 4 corners
+            int baseymax = basey0 + ncols - 2;
+            int basex0 = baseymax + ncols - 2;
+            int basexmax = basex0 + nrows - 2;
+            if (xcol==0) //base x min edge condition
+            {
+                if (yrow == 0) return 1; //x=0, y=0 corner
+                else if (yrow == nrows - 1) return 2; //x=0, y=max corner
+                else //point along x=0 edge
+                {
+                    return basex0 + (yrow - 1); //minus 1 because of no corner to the edge line (the three cases following are the same)
+                }
+            }
+            else if (xcol==ncols-1) //base x max edge condition
+            {
+                if (yrow == 0) return 4; //x=max, y=0 corner
+                else if (yrow == nrows - 1) return 3; //x=max, y=max corner
+                else //point along x=max edge
+                {
+                    return basexmax + (yrow - 1);
+                }
+            }
+            else if (yrow==0) //base y min edge condition
+            {
+                //corners already picked up, so only need edge index
+                return basey0 + (xcol - 1);
+            }
+            else if (yrow==nrows-1) //base y max edge condition
+            {
+                //corners already picked up, so only need edge index
+                return baseymax + (xcol - 1);
+            }
+            return -1; //AND THROW AN ERROR! should never happen
+        }
+
+        /// <summary>
         /// Export an OBJ file suitable for loading into an art package, for example to then export as STL for 3D printing.
         /// </summary>
         /// <param name="Filename"></param>
@@ -203,10 +257,18 @@ namespace assets.Scripts
                 }
                 //points forming base and sides
                 //need points all around the base edges of the solid block to match the grid above - set height at -1 so as not to interfere with the landscape mesh
+                //corners first
+                int basecorners = p;
+                writer.WriteLine("#Base corners");
+                writer.WriteLine(string.Format("v {0} {1} {2}", 0, 0, ZDepth)); p++;
+                writer.WriteLine(string.Format("v {0} {1} {2}", 0, ((float)(nrows-1))*cellsize, ZDepth)); p++;
+                writer.WriteLine(string.Format("v {0} {1} {2}", ((float)(ncols-1))*cellsize, ((float)(nrows - 1)) * cellsize, ZDepth)); p++;
+                writer.WriteLine(string.Format("v {0} {1} {2}", ((float)(ncols - 1)) * cellsize, 0, ZDepth)); p++;
+                //now the four edge lines
                 //y=0 z=-1 row
                 writer.WriteLine("#Base y=0 z=-1 line");
                 int basey0 = p;
-                for (int x=0; x<ncols; x++)
+                for (int x=1; x<ncols-1; x++) //NOTE missing first and last points, which make the corners
                 {
                     writer.WriteLine(string.Format("v {0} {1} {2}", ((float)x) * cellsize, 0, ZDepth));
                     p++;
@@ -215,7 +277,7 @@ namespace assets.Scripts
                 writer.WriteLine("#Base y=nrows z=-1 line");
                 int baseymax = p;
                 float yordinate = ((float)(nrows-1)) * cellsize;
-                for (int x = 0; x < ncols; x++)
+                for (int x = 1; x < ncols-1; x++) //NOTE missing first and last points, which make the corners
                 {
                     writer.WriteLine(string.Format("v {0} {1} {2}", ((float)x) * cellsize, yordinate, ZDepth));
                     p++;
@@ -223,7 +285,7 @@ namespace assets.Scripts
                 //x=0 z=-1 column - NOTE: the first and last points duplicate the corners
                 writer.WriteLine("#Base x=0 z=-1 line");
                 int basex0 = p;
-                for (int y = 0; y < nrows; y++)
+                for (int y = 1; y < nrows-1; y++) //Note missing first and last points, which make the corners
                 {
                     writer.WriteLine(string.Format("v {0} {1} {2}", 0, ((float)y) * cellsize, ZDepth));
                     p++;
@@ -232,7 +294,7 @@ namespace assets.Scripts
                 writer.WriteLine("#Base x=ncols-1 z=-1 line");
                 int basexmax = p;
                 float xordinate = ((float)(ncols - 1)) * cellsize;
-                for (int y = 0; y < nrows; y++)
+                for (int y = 1; y < nrows-1; y++) //NOTE missing first and last points, which make the corners
                 {
                     writer.WriteLine(string.Format("v {0} {1} {2}", xordinate, ((float)y) * cellsize, ZDepth));
                     p++;
@@ -266,10 +328,10 @@ namespace assets.Scripts
                 writer.WriteLine("#y=0 end face");
                 for (int x=0; x<ncols-1; x++)
                 {
-                    int v1 = basey0 + x + 1;
+                    int v1 = OBJBasePointIndex(x,0)+basecorners; // basey0 + x + 1;
                     int v2 = OBJPointIndex(x, 0);
                     int v3 = OBJPointIndex(x + 1, 0);
-                    int v4 = basey0 + (x + 1) + 1;
+                    int v4 = OBJBasePointIndex(x+1,0) + basecorners; // basey0 + (x + 1) + 1;
                     writer.WriteLine(string.Format("f {0} {1} {2}", v1, v2, v3));
                     writer.WriteLine(string.Format("f {0} {1} {2}", v1, v3, v4));
                 }
@@ -277,10 +339,10 @@ namespace assets.Scripts
                 writer.WriteLine("#y=nrows-1 end face");
                 for (int x = 0; x < ncols - 1; x++)
                 {
-                    int v1 = baseymax + x + 1;
+                    int v1 = OBJBasePointIndex(x,nrows-1)+basecorners; // baseymax + x + 1;
                     int v2 = OBJPointIndex(x, nrows-1);
                     int v3 = OBJPointIndex(x + 1, nrows-1);
-                    int v4 = baseymax + (x + 1) + 1;
+                    int v4 = OBJBasePointIndex(x+1,nrows-1) + basecorners; //baseymax + (x + 1) + 1;
                     writer.WriteLine(string.Format("f {0} {1} {2}", v3, v2, v1)); //NOTE backwards from above as on the other side
                     writer.WriteLine(string.Format("f {0} {1} {2}", v4, v3, v1));
                 }
@@ -288,10 +350,10 @@ namespace assets.Scripts
                 writer.WriteLine("#x=0 end face");
                 for (int y = 0; y < nrows - 1; y++)
                 {
-                    int v1 = basex0 + y + 1;
+                    int v1 = OBJBasePointIndex(0,y) + basecorners; //basex0 + y + 1;
                     int v2 = OBJPointIndex(0, y);
                     int v3 = OBJPointIndex(0, y+1);
-                    int v4 = basex0 + (y + 1) + 1;
+                    int v4 = OBJBasePointIndex(0,y+1)+basecorners; //basex0 + (y + 1) + 1;
                     writer.WriteLine(string.Format("f {0} {1} {2}", v1, v2, v3));
                     writer.WriteLine(string.Format("f {0} {1} {2}", v1, v3, v4));
                 }
@@ -299,34 +361,34 @@ namespace assets.Scripts
                 writer.WriteLine("#x=ncols-1 end face");
                 for (int y = 0; y < nrows - 1; y++)
                 {
-                    int v1 = basexmax + y + 1;
+                    int v1 = OBJBasePointIndex(ncols-1,y) + basecorners; //basexmax + y + 1;
                     int v2 = OBJPointIndex(ncols-1, y);
                     int v3 = OBJPointIndex(ncols-1, y + 1);
-                    int v4 = basexmax + (y + 1) + 1;
+                    int v4 = OBJBasePointIndex(ncols-1,y+1) + basecorners; //basexmax + (y + 1) + 1;
                     writer.WriteLine(string.Format("f {0} {1} {2}", v3, v2, v1)); //NOTE backwards from above as on the other side
                     writer.WriteLine(string.Format("f {0} {1} {2}", v4, v3, v1));
                 }
                 //finally, wire up the bottom face, that's fan left and right single tile edge and tri strip the middle bits
                 writer.WriteLine("#bottom face");
                 //base y=0 row to x=0 column fan AND in parallel, the other side fan y=0 row 0 to x=nrows-1 column fan
-                int lv1 = basey0+1; //left
-                int rv1 = basey0 + nrows - 2; //right
-                for (int y=0; y<nrows-1; y++)
+                int lv1 = OBJBasePointIndex(1,0)+basecorners; // basey0+1; //left
+                int rv1 = OBJBasePointIndex(ncols-2,0) + basecorners; // basey0 + nrows - 2; //right
+                for (int y=0; y<nrows-2; y++)
                 {
-                    int lv2 = basex0 + y + 1;
-                    int lv3 = basex0 + (y + 1) + 1;
-                    writer.WriteLine(string.Format("f {0} {1} {2}", lv1, lv2, lv1));
-                    int rv2 = basexmax + y + 1;
-                    int rv3 = basexmax + (y + 1) + 1;
+                    int lv2 = OBJBasePointIndex(0,y) + basecorners; // basex0 + y + 1;
+                    int lv3 = OBJBasePointIndex(0, y+1) + basecorners; ; // basex0 + (y + 1) + 1;
+                    writer.WriteLine(string.Format("f {0} {1} {2}", lv3, lv2, lv1));
+                    int rv2 = OBJBasePointIndex(ncols - 1, y) + basecorners; //basexmax + y + 1;
+                    int rv3 = OBJBasePointIndex(ncols - 1, y+1) + basecorners; //basexmax + (y + 1) + 1;
                     writer.WriteLine(string.Format("f {0} {1} {2}", rv1, rv2, rv3)); //NOTE backwards from previous to maintain winding
                 }
                 //now tristrip the middle
                 for (int x=0; x<nrows-1; x++)
                 {
-                    int v1 = basey0 + x + 1;
-                    int v2 = baseymax + x + 1;
-                    int v3 = baseymax + (x + 1) + 1;
-                    int v4 = basey0 + (x + 1) + 1;
+                    int v1 = OBJBasePointIndex(x,0) + basecorners; //basey0 + x + 1;
+                    int v2 = OBJBasePointIndex(x,nrows-1) + basecorners; //baseymax + x + 1;
+                    int v3 = OBJBasePointIndex(x+1,nrows-1) + basecorners; //baseymax + (x + 1) + 1;
+                    int v4 = OBJBasePointIndex(x+1,0) + basecorners; //basey0 + (x + 1) + 1;
                     //skip the first and last triangles which were tri-fanned in the previous block
                     if (x!=0)
                         writer.WriteLine(string.Format("f {0} {1} {2}", v1, v2, v4));
